@@ -68,6 +68,19 @@ Reverts to your own git identity.
 
 Add `--global` to apply to all repos.
 
+### Run a command as a persona
+
+```
+gh agent-persona run alice -- my-coding-agent
+gh agent-persona run bob -- python scripts/auto-review.py
+```
+
+Launches the command with the persona's git identity and a fresh `GITHUB_TOKEN` injected as environment variables. Any git commits the command makes will be attributed to the persona. Any GitHub API calls using `GITHUB_TOKEN` or `GH_TOKEN` will authenticate as the persona.
+
+When the command exits, the injected environment is gone -- your own identity is unaffected.
+
+The token expires after 1 hour. For longer sessions, generate a fresh token with `gh agent-persona token`.
+
 ### Make a one-off commit as a persona
 
 ```

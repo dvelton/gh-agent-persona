@@ -62,44 +62,17 @@ func runToken(cmd *cobra.Command, args []string) error {
 	}
 
 	// Exchange for installation token
-	endpoint := fmt.Sprintf("app/installations/%d/access_tokens", installationID)
-
-	// Build request body if repo scoping is needed
-	apiArgs := []string{"api", "--method", "POST", endpoint,
-		"-H", "Authorization: Bearer " + jwtToken,
-		"-H", "Accept: application/vnd.github+json",
-	}
-
-	if tokenRepo != "" {
-		_, repoName, err := splitRepo(tokenRepo)
-		if err != nil {
-			return err
-		}
-		apiArgs = append(apiArgs, "-f", fmt.Sprintf("repositories[]=%s", repoName))
-	}
-
-	stdout, _, err := gh.Exec(apiArgs...)
+	token, expiresAt, err := getInstallationToken(jwtToken, installationID, tokenRepo)
 	if err != nil {
-		return fmt.Errorf("creating installation token: %w", err)
-	}
-
-	var tokenResp struct {
-		Token     string `json:"token"`
-		ExpiresAt string `json:"expires_at"`
-	}
-	if err := json.Unmarshal(stdout.Bytes(), &tokenResp); err != nil {
-		return fmt.Errorf("parsing token response: %w", err)
-	}
-	if tokenResp.Token == "" {
-		return fmt.Errorf("GitHub returned an empty installation token")
+		return err
 	}
 
 	if tokenExport {
-		fmt.Printf("export GITHUB_TOKEN=%s\n", tokenResp.Token)
+		fmt.Printf("export GITHUB_TOKEN=%s\n", token)
 	} else {
-		fmt.Println(tokenResp.Token)
+		fmt.Println(token)
 		fmt.Println()
-		fmt.Printf("# Expires: %s\n", tokenResp.ExpiresAt)
+		fmt.Printf("# Expires: %s\n", expiresAt)
 		if tokenRepo != "" {
 			fmt.Printf("# Scoped to: %s\n", tokenRepo)
 		}
@@ -107,6 +80,41 @@ func runToken(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func getInstallationToken(jwtToken string, installationID int64, repo string) (string, string, error) {
+	endpoint := fmt.Sprintf("app/installations/%d/access_tokens", installationID)
+
+	apiArgs := []string{"api", "--method", "POST", endpoint,
+		"-H", "Authorization: Bearer " + jwtToken,
+		"-H", "Accept: application/vnd.github+json",
+	}
+
+	if repo != "" {
+		_, repoName, err := splitRepo(repo)
+		if err != nil {
+			return "", "", err
+		}
+		apiArgs = append(apiArgs, "-f", fmt.Sprintf("repositories[]=%s", repoName))
+	}
+
+	stdout, _, err := gh.Exec(apiArgs...)
+	if err != nil {
+		return "", "", fmt.Errorf("creating installation token: %w", err)
+	}
+
+	var resp struct {
+		Token     string `json:"token"`
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		return "", "", fmt.Errorf("parsing token response: %w", err)
+	}
+	if resp.Token == "" {
+		return "", "", fmt.Errorf("GitHub returned an empty installation token")
+	}
+
+	return resp.Token, resp.ExpiresAt, nil
 }
 
 func findInstallation(p *storage.Persona, jwtToken, repo string) (int64, error) {
