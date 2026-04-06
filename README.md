@@ -1,6 +1,6 @@
 # gh-agent-persona
 
-A proof-of-concept `gh` CLI extension that lets you create named AI agent personas on GitHub. Each persona gets its own commit identity, scoped permissions, and audit trail (backed by a GitHub App under the hood, but without the registration ceremony - feels like naming a teammate).
+A proof-of-concept `gh` CLI extension that lets you create named AI agent personas on GitHub. Each persona gets its own commit identity, scoped permissions, and audit trail (backed by a GitHub App under the hood).
 
 **This is a personal experiment, not a supported product. Not for use in production environments.** It scratches an itch: giving each of your AI coding agents a distinct, trackable identity on GitHub.
 
