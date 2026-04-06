@@ -121,7 +121,7 @@ Removes the GitHub App, deletes local credentials, and cleans up git config. Exi
 
 Each persona is a GitHub App created through the [manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest). The extension:
 
-1. Generates an App manifest with your chosen name, permissions, and sensible defaults
+1. Generates an App manifest with your chosen name, permissions, and defaults
 2. Opens your browser to GitHub's App creation page (one click to confirm)
 3. Catches the redirect, exchanges the code for App credentials (ID, private key, etc.)
 4. Stores credentials locally at `~/.config/gh-agent-persona/`
