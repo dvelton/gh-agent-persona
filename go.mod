@@ -1,6 +1,6 @@
 module github.com/dvelton/gh-agent-persona
 
-go 1.26.1
+go 1.23
 
 require (
 	github.com/cli/go-gh/v2 v2.13.0 // indirect
