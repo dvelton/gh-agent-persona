@@ -88,16 +88,22 @@ gh agent-persona run bob -- python scripts/auto-review.py
 
 Launches the command with the persona's git identity and a fresh `GITHUB_TOKEN` injected as environment variables. Any git commits the command makes will be attributed to the persona. Any GitHub API calls using `GITHUB_TOKEN` or `GH_TOKEN` will authenticate as the persona.
 
-If the persona has instructions, they are injected as:
+If the persona has instructions, they are automatically written to `AGENTS.md` in the current directory for the duration of the command and removed on exit. AGENTS.md is the cross-tool standard read by Copilot, Claude Code, Cursor, Codex, Gemini CLI, Windsurf, and others -- so the persona's instructions reach whatever coding agent you're wrapping without any tool-specific configuration.
+
+To skip the AGENTS.md behavior:
+
+```
+gh agent-persona run alice --no-agents-md -- my-coding-agent
+```
+
+Instructions are also available as environment variables for custom tooling:
 
 - `AGENT_PERSONA_INSTRUCTIONS` -- the full instructions text
 - `AGENT_PERSONA_INSTRUCTIONS_FILE` -- path to a temp file containing the instructions
 - `AGENT_PERSONA_NAME` -- the persona's short name
 - `AGENT_PERSONA_ROLE` -- the persona's role description (if set)
 
-The wrapped tool can read these environment variables or ignore them. The temp file is cleaned up when the command exits.
-
-When the command exits, the injected environment is gone -- your own identity is unaffected.
+When the command exits, the injected environment is gone, the AGENTS.md is restored to its previous state, and the temp file is cleaned up. If `AGENTS.md` had a persistent persona from `apply`, that block is preserved. Cleanup is best-effort -- if the process is force-killed (SIGKILL), the AGENTS.md block may be left behind. Run `gh agent-persona apply --clear` to remove it manually.
 
 The token expires after 1 hour. For longer sessions, generate a fresh token with `gh agent-persona token`.
 
@@ -142,6 +148,35 @@ gh agent-persona instructions alice --set "You are a security-focused reviewer..
 gh agent-persona instructions alice --from-file ./new-prompt.md
 gh agent-persona instructions alice --edit     # opens $EDITOR
 gh agent-persona instructions alice --clear    # removes instructions
+```
+
+### Apply instructions to a project
+
+```
+gh agent-persona apply alice
+```
+
+Writes the persona's instructions into `AGENTS.md` in the current directory. AGENTS.md is the cross-tool standard read by Copilot, Claude Code, Cursor, Codex, Gemini CLI, Windsurf, and others. This is a persistent change -- the instructions stay until you clear them.
+
+```
+gh agent-persona apply bob          # switch to bob's instructions
+gh agent-persona apply --clear      # remove persona instructions
+gh agent-persona apply --status     # show which persona is applied
+```
+
+The persona's instructions are wrapped in comment markers so they don't disturb other content in the file. If AGENTS.md already has project-level instructions, they are preserved.
+
+### Output instructions for manual use
+
+```
+gh agent-persona render alice
+```
+
+Outputs the persona's instructions as an AGENTS.md block (with comment markers) to stdout. Use this to pipe or paste instructions into whatever file you want:
+
+```
+gh agent-persona render alice >> AGENTS.md
+gh agent-persona render alice --raw > CLAUDE.md
 ```
 
 ### Delete a persona

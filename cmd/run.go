@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
+	"github.com/dvelton/gh-agent-persona/internal/agentsmd"
 	"github.com/dvelton/gh-agent-persona/internal/auth"
 	"github.com/dvelton/gh-agent-persona/internal/storage"
 	"github.com/spf13/cobra"
@@ -20,8 +22,10 @@ GitHub API token injected as environment variables. The command
 inherits the persona's commit attribution and API access for its
 entire lifetime. When the command exits, the environment is clean.
 
-This works with any tool that makes git commits or uses GITHUB_TOKEN
-for API calls -- coding agents, automation scripts, CI tools, etc.
+If the persona has instructions, they are written into AGENTS.md
+for the duration of the command and removed on exit. This makes the
+instructions available to any coding agent that reads AGENTS.md
+(Copilot, Claude Code, Cursor, Codex, Gemini CLI, Windsurf, etc).
 
 Example:
   gh agent-persona run alice -- my-coding-agent
@@ -31,10 +35,14 @@ Example:
 	RunE:                  runRun,
 }
 
-var runRepo string
+var (
+	runRepo       string
+	runNoAgentsMD bool
+)
 
 func init() {
 	runCmd.Flags().StringVar(&runRepo, "repo", "", "Scope the API token to a specific repo (owner/repo)")
+	runCmd.Flags().BoolVar(&runNoAgentsMD, "no-agents-md", false, "Skip writing persona instructions to AGENTS.md")
 	rootCmd.AddCommand(runCmd)
 }
 
@@ -92,13 +100,16 @@ func runRun(cmd *cobra.Command, args []string) error {
 		"GH_TOKEN="+token,
 	)
 
-	// Inject persona instructions if available.
+	// Resolve persona instructions.
 	// The .md file is authoritative; fall back to JSON only if no file exists.
-	instructions, fileExists, _ := storage.ReadInstructions(personaName)
-	if !fileExists {
-		instructions = p.Instructions
-	}
+	instructions := resolvePersonaInstructions(p)
+
 	var instrTempFile string
+	var agentsApplied bool
+	var agentsPriorContent []byte
+	var agentsPriorExisted bool
+	agentsPath := filepath.Join(".", "AGENTS.md")
+
 	if instructions != "" {
 		child.Env = append(child.Env, "AGENT_PERSONA_INSTRUCTIONS="+instructions)
 		child.Env = append(child.Env, "AGENT_PERSONA_NAME="+p.Name)
@@ -106,7 +117,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			child.Env = append(child.Env, "AGENT_PERSONA_ROLE="+p.Role)
 		}
 
-		// Write to a unique temp file so tools that prefer file-based config can use it
+		// Write to a unique temp file for tools that prefer file-based config
 		if f, err := os.CreateTemp("", fmt.Sprintf("agent-persona-%s-*.md", personaName)); err == nil {
 			instrTempFile = f.Name()
 			f.Write([]byte(instructions))
@@ -114,10 +125,28 @@ func runRun(cmd *cobra.Command, args []string) error {
 			os.Chmod(instrTempFile, 0600)
 			child.Env = append(child.Env, "AGENT_PERSONA_INSTRUCTIONS_FILE="+instrTempFile)
 		}
+
+		// Auto-apply instructions to AGENTS.md so coding agents pick them up.
+		// Save the prior state so we can restore it on exit (preserving any
+		// persistent `apply` or user content).
+		if !runNoAgentsMD {
+			if data, err := os.ReadFile(agentsPath); err == nil {
+				agentsPriorContent = data
+				agentsPriorExisted = true
+			}
+			if err := agentsmd.ApplyToFile(agentsPath, personaName, instructions); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not write AGENTS.md: %v\n", err)
+			} else {
+				agentsApplied = true
+			}
+		}
 	}
 
 	fmt.Printf("Running as %s\n", botName)
 	fmt.Printf("  Token expires: %s\n", expiresAt)
+	if agentsApplied {
+		fmt.Printf("  Instructions:  written to AGENTS.md (will be removed on exit)\n")
+	}
 	fmt.Println()
 
 	// Forward signals to the child process
@@ -135,7 +164,16 @@ func runRun(cmd *cobra.Command, args []string) error {
 	signal.Stop(sigCh)
 	close(sigCh)
 
-	// Clean up temporary instructions file
+	// Clean up: restore AGENTS.md to its prior state and remove temp file
+	if agentsApplied {
+		if agentsPriorExisted {
+			if err := os.WriteFile(agentsPath, agentsPriorContent, 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not restore AGENTS.md: %v\n", err)
+			}
+		} else {
+			os.Remove(agentsPath)
+		}
+	}
 	if instrTempFile != "" {
 		os.Remove(instrTempFile)
 	}
