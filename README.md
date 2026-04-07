@@ -37,20 +37,31 @@ After creating the App, install it on your repos by visiting the link shown in t
 
 **Available presets:**
 
-| Preset | What it can do |
-|--------|----------------|
-| `coder` | Read/write code and PRs, read issues |
-| `reviewer` | Read code, write PRs and issues |
-| `docs` | Read/write code and GitHub Pages |
-| `ci` | Read code, write checks and actions |
-| `triage` | Write issues and PRs |
-| `minimal` | Read code only |
+Each preset configures both permissions and default instructions. The instructions tell the agent how to behave when injected via `run`.
+
+| Preset | Permissions | Default instructions |
+|--------|-------------|---------------------|
+| `coder` | Read/write code and PRs, read issues | Implement features, fix bugs, write tests |
+| `reviewer` | Read code, write PRs and issues | Review for correctness, security, clarity |
+| `docs` | Read/write code and GitHub Pages | Write clear, accurate documentation |
+| `ci` | Read code, write checks and actions | Maintain pipelines, fix failing checks |
+| `triage` | Write issues and PRs | Label, deduplicate, prioritize incoming work |
+| `minimal` | Read code only | (none) |
 
 You can also specify permissions directly:
 
 ```
 gh agent-persona create alice --permissions contents:read,pull_requests:write,issues:write
 ```
+
+**Adding instructions at creation time:**
+
+```
+gh agent-persona create alice --preset reviewer --instructions "Focus on security issues above all else."
+gh agent-persona create alice --preset coder --instructions-file ./my-coder-prompt.md
+```
+
+When a preset is used without explicit `--instructions`, the preset's default instructions are applied. You can override or update instructions at any time with the `instructions` command.
 
 ### Switch git identity to a persona
 
@@ -76,6 +87,15 @@ gh agent-persona run bob -- python scripts/auto-review.py
 ```
 
 Launches the command with the persona's git identity and a fresh `GITHUB_TOKEN` injected as environment variables. Any git commits the command makes will be attributed to the persona. Any GitHub API calls using `GITHUB_TOKEN` or `GH_TOKEN` will authenticate as the persona.
+
+If the persona has instructions, they are injected as:
+
+- `AGENT_PERSONA_INSTRUCTIONS` -- the full instructions text
+- `AGENT_PERSONA_INSTRUCTIONS_FILE` -- path to a temp file containing the instructions
+- `AGENT_PERSONA_NAME` -- the persona's short name
+- `AGENT_PERSONA_ROLE` -- the persona's role description (if set)
+
+The wrapped tool can read these environment variables or ignore them. The temp file is cleaned up when the command exits.
 
 When the command exits, the injected environment is gone -- your own identity is unaffected.
 
@@ -107,6 +127,21 @@ eval $(gh agent-persona token alice --export)
 ```
 gh agent-persona list
 gh agent-persona show alice
+```
+
+### View or update instructions
+
+```
+gh agent-persona instructions alice
+```
+
+Prints the persona's current instructions. To update them:
+
+```
+gh agent-persona instructions alice --set "You are a security-focused reviewer..."
+gh agent-persona instructions alice --from-file ./new-prompt.md
+gh agent-persona instructions alice --edit     # opens $EDITOR
+gh agent-persona instructions alice --clear    # removes instructions
 ```
 
 ### Delete a persona
@@ -142,16 +177,19 @@ These gaps would require platform-level changes to address.
 
 ## Local Data
 
-Credentials are stored at `~/.config/gh-agent-persona/`:
+Credentials and configuration are stored at `~/.config/gh-agent-persona/`:
 
 ```
 ~/.config/gh-agent-persona/
   personas/
-    alice.json     # Persona metadata (app ID, slug, permissions, etc.)
+    alice.json       # Persona metadata (app ID, slug, permissions, instructions, etc.)
     bob.json
   keys/
-    alice.pem      # Private key for alice's GitHub App
+    alice.pem        # Private key for alice's GitHub App
     bob.pem
+  instructions/
+    alice.md         # Instructions file (editable directly or via the CLI)
+    bob.md
 ```
 
 Private keys are stored with `0600` permissions. Keep this directory secure.

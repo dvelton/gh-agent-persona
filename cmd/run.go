@@ -92,6 +92,30 @@ func runRun(cmd *cobra.Command, args []string) error {
 		"GH_TOKEN="+token,
 	)
 
+	// Inject persona instructions if available.
+	// The .md file is authoritative; fall back to JSON only if no file exists.
+	instructions, fileExists, _ := storage.ReadInstructions(personaName)
+	if !fileExists {
+		instructions = p.Instructions
+	}
+	var instrTempFile string
+	if instructions != "" {
+		child.Env = append(child.Env, "AGENT_PERSONA_INSTRUCTIONS="+instructions)
+		child.Env = append(child.Env, "AGENT_PERSONA_NAME="+p.Name)
+		if p.Role != "" {
+			child.Env = append(child.Env, "AGENT_PERSONA_ROLE="+p.Role)
+		}
+
+		// Write to a unique temp file so tools that prefer file-based config can use it
+		if f, err := os.CreateTemp("", fmt.Sprintf("agent-persona-%s-*.md", personaName)); err == nil {
+			instrTempFile = f.Name()
+			f.Write([]byte(instructions))
+			f.Close()
+			os.Chmod(instrTempFile, 0600)
+			child.Env = append(child.Env, "AGENT_PERSONA_INSTRUCTIONS_FILE="+instrTempFile)
+		}
+	}
+
 	fmt.Printf("Running as %s\n", botName)
 	fmt.Printf("  Token expires: %s\n", expiresAt)
 	fmt.Println()
@@ -110,6 +134,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 	err = child.Run()
 	signal.Stop(sigCh)
 	close(sigCh)
+
+	// Clean up temporary instructions file
+	if instrTempFile != "" {
+		os.Remove(instrTempFile)
+	}
 
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

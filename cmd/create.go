@@ -27,11 +27,13 @@ then stores credentials locally for later use.`,
 }
 
 var (
-	createRole        string
-	createRepos       string
-	createPermissions string
-	createPreset      string
-	createPrivate     bool
+	createRole             string
+	createRepos            string
+	createPermissions      string
+	createPreset           string
+	createPrivate          bool
+	createInstructions     string
+	createInstructionsFile string
 )
 
 func init() {
@@ -40,6 +42,8 @@ func init() {
 	createCmd.Flags().StringVar(&createPermissions, "permissions", "", "Comma-separated permission:level pairs")
 	createCmd.Flags().StringVar(&createPreset, "preset", "", "Permission preset: "+strings.Join(presets.Names(), ", "))
 	createCmd.Flags().BoolVar(&createPrivate, "private", true, "Make the GitHub App private")
+	createCmd.Flags().StringVar(&createInstructions, "instructions", "", "Instructions that define this persona's behavior")
+	createCmd.Flags().StringVar(&createInstructionsFile, "instructions-file", "", "Path to a file containing instructions")
 	rootCmd.AddCommand(createCmd)
 }
 
@@ -70,6 +74,12 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	repos, err := parseRepoList(createRepos)
+	if err != nil {
+		return err
+	}
+
+	// Resolve instructions
+	instructions, err := resolveInstructions()
 	if err != nil {
 		return err
 	}
@@ -123,6 +133,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	persona := &storage.Persona{
 		Name:          name,
 		Role:          createRole,
+		Instructions:  instructions,
 		AppID:         appData.ID,
 		AppSlug:       appData.Slug,
 		BotUserID:     botUserID,
@@ -138,12 +149,23 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("saving persona: %w", err)
 	}
 
+	// Save instructions to a separate file for easy editing
+	if instructions != "" {
+		if err := storage.SaveInstructions(name, instructions); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not save instructions file: %v\n", err)
+		}
+	}
+
 	// If repos were specified, print install instructions
 	fmt.Printf("\nCreated agent persona %q\n\n", name)
 	fmt.Printf("  GitHub App:    %s\n", appData.Slug)
 	fmt.Printf("  Bot identity:  %s\n", storage.BotUsername(appData.Slug))
 	fmt.Printf("  Commit email:  %s\n", commitEmail)
 	fmt.Printf("  Permissions:   %s\n", formatPermissions(perms))
+	if instructions != "" {
+		lines := strings.Count(instructions, "\n") + 1
+		fmt.Printf("  Instructions:  %d lines (view with: gh agent-persona instructions %s)\n", lines, name)
+	}
 	fmt.Println()
 
 	if len(repos) > 0 {
@@ -363,6 +385,32 @@ func buildAppName(username, personaName string) string {
 		sanitized = "persona"
 	}
 	return fmt.Sprintf("%s-%s-agent", username, sanitized)
+}
+
+func resolveInstructions() (string, error) {
+	// Explicit --instructions flag takes priority
+	if createInstructions != "" && createInstructionsFile != "" {
+		return "", fmt.Errorf("cannot specify both --instructions and --instructions-file")
+	}
+	if createInstructions != "" {
+		return createInstructions, nil
+	}
+	if createInstructionsFile != "" {
+		data, err := os.ReadFile(createInstructionsFile)
+		if err != nil {
+			return "", fmt.Errorf("reading instructions file: %w", err)
+		}
+		content := strings.TrimSpace(string(data))
+		if content == "" {
+			return "", fmt.Errorf("instructions file %q is empty", createInstructionsFile)
+		}
+		return content, nil
+	}
+	// Fall back to preset instructions if a preset was specified
+	if createPreset != "" {
+		return presets.GetInstructions(createPreset), nil
+	}
+	return "", nil
 }
 
 func zeroBytes(data []byte) {

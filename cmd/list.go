@@ -92,6 +92,19 @@ func runShow(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Permissions:    %s\n", formatPermissions(p.Permissions))
+
+	// Show instructions status
+	instructions, fileExists, _ := storage.ReadInstructions(p.Name)
+	if !fileExists {
+		instructions = p.Instructions
+	}
+	if instructions != "" {
+		lines := strings.Count(instructions, "\n") + 1
+		fmt.Printf("Instructions:   %d lines (view with: gh agent-persona instructions %s)\n", lines, p.Name)
+	} else {
+		fmt.Printf("Instructions:   (none)\n")
+	}
+
 	fmt.Printf("Created:        %s\n", p.CreatedAt)
 	fmt.Printf("Key stored:     %s\n", p.KeyPath)
 

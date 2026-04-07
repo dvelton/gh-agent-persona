@@ -19,6 +19,7 @@ type Installation struct {
 type Persona struct {
 	Name          string            `json:"name"`
 	Role          string            `json:"role,omitempty"`
+	Instructions  string            `json:"instructions,omitempty"`
 	AppID         int64             `json:"app_id"`
 	AppSlug       string            `json:"app_slug"`
 	BotUserID     int64             `json:"bot_user_id"`
@@ -46,7 +47,7 @@ func EnsureDirs() error {
 	if err != nil {
 		return err
 	}
-	for _, sub := range []string{"personas", "keys"} {
+	for _, sub := range []string{"personas", "keys", "instructions"} {
 		if err := os.MkdirAll(filepath.Join(base, sub), 0700); err != nil {
 			return err
 		}
@@ -142,10 +143,14 @@ func DeletePersona(name string) error {
 	}
 	jsonPath := filepath.Join(base, "personas", personaFilename(name))
 	keyPath := filepath.Join(base, "keys", keyFilename(name))
+	instrPath := filepath.Join(base, "instructions", instructionsFilename(name))
 
 	var errs []string
 	if err := os.Remove(keyPath); err != nil && !os.IsNotExist(err) {
 		errs = append(errs, fmt.Sprintf("removing private key: %v", err))
+	}
+	if err := os.Remove(instrPath); err != nil && !os.IsNotExist(err) {
+		errs = append(errs, fmt.Sprintf("removing instructions: %v", err))
 	}
 	if err := os.Remove(jsonPath); err != nil && !os.IsNotExist(err) {
 		errs = append(errs, fmt.Sprintf("removing persona file: %v", err))
@@ -220,4 +225,47 @@ func personaFilename(name string) string {
 
 func keyFilename(name string) string {
 	return name + ".pem"
+}
+
+func instructionsFilename(name string) string {
+	return name + ".md"
+}
+
+func SaveInstructions(name string, content string) error {
+	if err := ValidatePersonaName(name); err != nil {
+		return err
+	}
+	base, err := ConfigDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(base, "instructions", instructionsFilename(name))
+	return os.WriteFile(path, []byte(content), 0600)
+}
+
+func ReadInstructions(name string) (string, bool, error) {
+	if err := ValidatePersonaName(name); err != nil {
+		return "", false, err
+	}
+	base, err := ConfigDir()
+	if err != nil {
+		return "", false, err
+	}
+	path := filepath.Join(base, "instructions", instructionsFilename(name))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return string(data), true, nil
+}
+
+func InstructionsPath(name string) (string, error) {
+	base, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "instructions", instructionsFilename(name)), nil
 }
